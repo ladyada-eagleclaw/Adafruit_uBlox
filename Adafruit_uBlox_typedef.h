@@ -49,6 +49,7 @@ typedef enum {
   UBX_CFG_RATE = 0x08,  // Navigation/Measurement Rate Settings
   UBX_CFG_CFG = 0x09,   // Clear, Save, and Load Configurations
   UBX_CFG_NAVX5 = 0x23, // Navigation Engine Settings
+  UBX_CFG_ITFM = 0x39,  ///< Jamming/interference monitor configuration.
   UBX_CFG_GNSS = 0x3E,  // GNSS Configuration
   UBX_CFG_PMS = 0x86    // Power Mode Setup
 } UBXCfgMessageId;
