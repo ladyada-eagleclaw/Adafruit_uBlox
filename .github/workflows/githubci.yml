@@ -3,6 +3,19 @@ name: Arduino Library CI
 on: [pull_request, push, repository_dispatch]
 
 jobs:
+  regression-tests:
+    name: All regression tests
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/checkout@v4
+      with:
+        repository: adafruit/Adafruit_GPS
+        ref: 1.9.0
+        path: gps-dependency
+    - name: Run all tests with sanitizers
+      run: python3 extras/tests/run_tests.py --gps-dir gps-dependency
+
   build:
     runs-on: ubuntu-latest
     

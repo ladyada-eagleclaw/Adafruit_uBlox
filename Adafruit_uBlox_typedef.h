@@ -36,6 +36,11 @@ typedef enum {
   UBX_CLASS_NMEA = 0xF0 // NMEA Standard Messages
 } UBXMessageClass;
 
+/** UBX navigation message IDs. */
+typedef enum {
+  UBX_NAV_PVT = 0x07 ///< Position, velocity and time (92-byte M8 payload).
+} UBXNavMessageId;
+
 /** UBX CFG Message IDs. */
 typedef enum {
   UBX_CFG_PRT = 0x00,   // Port Configuration
@@ -65,20 +70,21 @@ typedef enum {
   UBX_PORT_SPI = 4    // SPI port
 } UBXPortId;
 
-/** UART mode flags (Charlen, Parity & Stop bit settings). */
+/** CFG-PRT UART mode values (M8 protocol section 32.10.25.2).
+ * Seven-bit modes without parity are not supported by M8 receivers. */
 typedef enum {
-  UBX_UART_MODE_8N1 = 0x000, // 8-bit, no parity, 1 stop bit
-  UBX_UART_MODE_8E1 = 0x100, // 8-bit, even parity, 1 stop bit
-  UBX_UART_MODE_8O1 = 0x200, // 8-bit, odd parity, 1 stop bit
-  UBX_UART_MODE_7N1 = 0x400, // 7-bit, no parity, 1 stop bit
-  UBX_UART_MODE_7E1 = 0x500, // 7-bit, even parity, 1 stop bit
-  UBX_UART_MODE_7O1 = 0x600, // 7-bit, odd parity, 1 stop bit
-  UBX_UART_MODE_7N2 = 0x800, // 7-bit, no parity, 2 stop bits
-  UBX_UART_MODE_7E2 = 0x900, // 7-bit, even parity, 2 stop bits
-  UBX_UART_MODE_7O2 = 0xA00, // 7-bit, odd parity, 2 stop bits
-  UBX_UART_MODE_8N2 = 0xC00, // 8-bit, no parity, 2 stop bits
-  UBX_UART_MODE_8E2 = 0xD00, // 8-bit, even parity, 2 stop bits
-  UBX_UART_MODE_8O2 = 0xE00  // 8-bit, odd parity, 2 stop bits
+  UBX_UART_MODE_8N1 = 0x08D0, // 8-bit, no parity, 1 stop bit
+  UBX_UART_MODE_8E1 = 0x00D0, // 8-bit, even parity, 1 stop bit
+  UBX_UART_MODE_8O1 = 0x02D0, // 8-bit, odd parity, 1 stop bit
+  UBX_UART_MODE_7N1 = 0x0890, // 7-bit, no parity, 1 stop bit
+  UBX_UART_MODE_7E1 = 0x0090, // 7-bit, even parity, 1 stop bit
+  UBX_UART_MODE_7O1 = 0x0290, // 7-bit, odd parity, 1 stop bit
+  UBX_UART_MODE_7N2 = 0x2890, // 7-bit, no parity, 2 stop bits
+  UBX_UART_MODE_7E2 = 0x2090, // 7-bit, even parity, 2 stop bits
+  UBX_UART_MODE_7O2 = 0x2290, // 7-bit, odd parity, 2 stop bits
+  UBX_UART_MODE_8N2 = 0x28D0, // 8-bit, no parity, 2 stop bits
+  UBX_UART_MODE_8E2 = 0x20D0, // 8-bit, even parity, 2 stop bits
+  UBX_UART_MODE_8O2 = 0x22D0  // 8-bit, odd parity, 2 stop bits
 } UBXUARTMode;
 
 // Protocol flags for inProtoMask and outProtoMask

@@ -1,192 +1,64 @@
 /*!
  * @file ublox_ddc_parse_nmea.ino
- *
- * Example sketch demonstrating parsing NMEA sentences from a u-blox GPS/RTK module
- * using the Adafruit_GPS and Adafruit_UBX libraries.
- *
- * Written by Brent Rubell for Adafruit Industries.
- *
- * MIT license, all text above must be included in any redistribution
+ * Shared NMEA/GNSS decoding over u-blox DDC (I2C).
+ * Written by Brent Rubell and Limor Fried for Adafruit Industries.
+ * MIT license; retain this notice in redistributions.
  */
-
-#include <Adafruit_GPS.h>
 #include <Adafruit_UBX.h>
 #include <Adafruit_UBloxDDC.h>
 
-// Adafruit_UBloxDDC object with default I2C address (0x42)
-Adafruit_UBloxDDC gps;
-// Create Adafruit_UBX parser using the DDC object as input stream
-Adafruit_UBX ubx(gps);
-// Create Adafruit_GPS object for use as a NMEA parser only
-Adafruit_GPS NMEA;
+Adafruit_UBloxDDC ddc;
+Adafruit_UBX ubx(ddc);
+char firstSentence[128];
+char secondSentence[128];
+Adafruit_GNSS gnss(firstSentence, secondSentence, sizeof(firstSentence));
+uint32_t lastPrint = 0;
 
-// Buffer to store NMEA sentences from the module (may be partial sentences)
-const size_t SZ_NMEA_BUFFER = 128;
-uint8_t buffer[SZ_NMEA_BUFFER];
-uint32_t timer = millis();
-
-/*!
- *  @brief  Sets the NMEA output to only RMC and GGA sentences and waits for an
- * acknowledgment. All other common NMEA sentences are disabled to increase
- * loop() performance by decreasing the amount of messages output by the UBlox
- * module.
- *  @return Status indicating success, failure, or timeout
- */
-UBXSendStatus SetNMEAOutputRMCGGAOnly() {
-  UBXSendStatus status;
-  // Disable all common NMEA messages
-  status = ubx.sendMessageWithAck(UBX_CLASS_CFG, UBX_CFG_MSG,
-                                  UBX_CFG_MSG_NMEA_GLL_DISABLE,
-                                  sizeof(UBX_CFG_MSG_NMEA_GLL_DISABLE));
-  if (status != UBX_SEND_SUCCESS)
-    return status;
-  status = ubx.sendMessageWithAck(UBX_CLASS_CFG, UBX_CFG_MSG,
-                                  UBX_CFG_MSG_NMEA_GSA_DISABLE,
-                                  sizeof(UBX_CFG_MSG_NMEA_GSA_DISABLE));
-  if (status != UBX_SEND_SUCCESS)
-    return status;
-  status = ubx.sendMessageWithAck(UBX_CLASS_CFG, UBX_CFG_MSG,
-                                  UBX_CFG_MSG_NMEA_GSV_DISABLE,
-                                  sizeof(UBX_CFG_MSG_NMEA_GSV_DISABLE));
-  if (status != UBX_SEND_SUCCESS)
-    return status;
-  status = ubx.sendMessageWithAck(UBX_CLASS_CFG, UBX_CFG_MSG,
-                                  UBX_CFG_MSG_NMEA_VTG_DISABLE,
-                                  sizeof(UBX_CFG_MSG_NMEA_VTG_DISABLE));
-  if (status != UBX_SEND_SUCCESS)
-    return status;
-  // Enable only GGA and RMC messages
-  status = ubx.sendMessageWithAck(UBX_CLASS_CFG, UBX_CFG_MSG,
-                                  UBX_CFG_MSG_NMEA_GGA_ENABLE,
-                                  sizeof(UBX_CFG_MSG_NMEA_GGA_ENABLE));
-  if (status != UBX_SEND_SUCCESS)
-    return status;
-  status = ubx.sendMessageWithAck(UBX_CLASS_CFG, UBX_CFG_MSG,
-                                  UBX_CFG_MSG_NMEA_RMC_ENABLE,
-                                  sizeof(UBX_CFG_MSG_NMEA_RMC_ENABLE));
-  return status;
-}
+void onNMEA(const nmea_sentence_t& sentence);
 
 void setup() {
-  // Initialize serial port for debugging
   Serial.begin(115200);
-  while (!Serial) {
-    ; // Wait for serial port to connect
-  }
+  // Native USB boards wait for the monitor; remove this for standalone use.
+  while (!Serial) delay(10);
+  delay(250);
 
-  // Initialize GPS module
-  if (!gps.begin()) {
-    Serial.println("Failed to initialize GPS module!");
-    while (1); // Halt if initialization fails
-  }
-  Serial.println("GPS module initialized successfully!");
+  Serial.println(F("Adafruit uBlox shared GNSS example"));
 
-  // Initialize the u-blox parser
-  if (!ubx.begin()) {
-    Serial.println("Failed to initialize u-blox parser!");
-    while (1); // Halt if initialization fails
+  if (!ddc.begin()) {
+    Serial.println(F("Could not find u-blox DDC at 0x42"));
+    while (true) delay(10);
   }
-  Serial.println("u-blox parser initialized successfully!");
-  ubx.verbose_debug = 3; // Set debug level to verbose
-
-  // Set NMEA output on DDC to RMC and GGA sentences only
-  UBXSendStatus status = SetNMEAOutputRMCGGAOnly();
-  if (status != UBX_SEND_SUCCESS) {
-    Serial.print("Failed to configure NMEA output [status code: ");
-    Serial.print(status);
-    Serial.println("]");
-    while (1); // Halt if setting NMEA output fails
-  }
+  ubx.begin();
+  ubx.setNMEAParser(&gnss, onNMEA);
+  Serial.println(F("Waiting for the receiver's existing NMEA output"));
 }
 
 void loop() {
-  static char nmeaSentenceBuf[SZ_NMEA_BUFFER];
-  static size_t nmeaSentenceIdx = 0;
+  // One reader handles UBX and NMEA, also during sendMessageWithAck().
+  ubx.checkMessages();
+}
 
-  // Check how many bytes are available
-  int bytesAvailable = gps.available();
+void onNMEA(const nmea_sentence_t& sentence) {
+  if (sentence.status != NMEA_FRAME_VALID) return;
+  // A complete sentence is decoded independently; old and new fixes are not mixed.
+  gnss_position_t position = Adafruit_GNSS::parsePosition(sentence);
+  if (position.validation.status != GNSS_SENTENCE_VALID) return;
+  if (millis() - lastPrint < 2000) return;
+  lastPrint = millis();
 
-  if (bytesAvailable > 0) {
-    // Read up to SZ_NMEA_BUFFER bytes at a time
-    size_t bytesToRead = min(bytesAvailable, (int)SZ_NMEA_BUFFER);
-    size_t bytesRead = gps.readBytes(buffer, bytesToRead);
-
-    // Build NMEA sentences and parse when complete
-    for (size_t i = 0; i < bytesRead; i++) {
-      char c = buffer[i];
-
-      // Add to buffer if space available
-      if (nmeaSentenceIdx < SZ_NMEA_BUFFER - 1) {
-        nmeaSentenceBuf[nmeaSentenceIdx++] = c;
-      }
-
-      // Check for end of NMEA sentence
-      if (c == '\n') {
-        nmeaSentenceBuf[nmeaSentenceIdx] = '\0';
-
-        // Parse the NMEA sentence
-        if (NMEA.parse(nmeaSentenceBuf)) {
-          // Successfully parsed sentence!
-          Serial.println(nmeaSentenceBuf);
-          // approximately every 2 seconds or so, print out the current stats
-          if (millis() - timer > 2000) {
-            timer = millis(); // reset the timer
-            Serial.print("\nTime: ");
-            if (NMEA.hour < 10) {
-              Serial.print('0');
-            }
-            Serial.print(NMEA.hour, DEC);
-            Serial.print(':');
-            if (NMEA.minute < 10) {
-              Serial.print('0');
-            }
-            Serial.print(NMEA.minute, DEC);
-            Serial.print(':');
-            if (NMEA.seconds < 10) {
-              Serial.print('0');
-            }
-            Serial.print(NMEA.seconds, DEC);
-            Serial.print('.');
-            if (NMEA.milliseconds < 10) {
-              Serial.print("00");
-            } else if (NMEA.milliseconds > 9 && NMEA.milliseconds < 100) {
-              Serial.print("0");
-            }
-            Serial.println(NMEA.milliseconds);
-            Serial.print("Date: ");
-            Serial.print(NMEA.day, DEC);
-            Serial.print('/');
-            Serial.print(NMEA.month, DEC);
-            Serial.print("/20");
-            Serial.println(NMEA.year, DEC);
-            Serial.print("Fix: ");
-            Serial.print((int)NMEA.fix);
-            Serial.print(" quality: ");
-            Serial.println((int)NMEA.fixquality);
-            if (NMEA.fix) {
-              Serial.print("Location: ");
-              Serial.print(NMEA.latitude, 4);
-              Serial.print(NMEA.lat);
-              Serial.print(", ");
-              Serial.print(NMEA.longitude, 4);
-              Serial.println(NMEA.lon);
-              Serial.print("Speed (knots): ");
-              Serial.println(NMEA.speed);
-              Serial.print("Angle: ");
-              Serial.println(NMEA.angle);
-              Serial.print("Altitude: ");
-              Serial.println(NMEA.altitude);
-              Serial.print("Satellites: ");
-              Serial.println((int)NMEA.satellites);
-            }
-          }
-        } else {
-          Serial.println("Failed to parse sentence.");
-        }
-        nmeaSentenceIdx = 0; // Reset index for next sentence
-      }
-    }
+  if (!position.fix) {
+    Serial.println(F("Receiving GNSS data; waiting for a position fix"));
+    return;
   }
-  // Short delay to prevent overwhelming the module
-  delay(10);
+  if (position.latitude.status != NMEA_NUMBER_VALID ||
+      position.longitude.status != NMEA_NUMBER_VALID) return;
+
+  // Format the exact coordinate components without an intermediate float.
+  char coordinate[GNSS_COORDINATE_TEXT_SIZE];
+  Adafruit_GNSS::formatCoordinate(coordinate, sizeof(coordinate), position.latitude);
+  Serial.print(F("Latitude: "));
+  Serial.print(coordinate);
+  Adafruit_GNSS::formatCoordinate(coordinate, sizeof(coordinate), position.longitude);
+  Serial.print(F(", Longitude: "));
+  Serial.println(coordinate);
 }

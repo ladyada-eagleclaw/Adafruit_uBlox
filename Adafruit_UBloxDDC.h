@@ -46,11 +46,19 @@ class Adafruit_UBloxDDC : public Stream {
   // Last byte read for peek() implementation
   int _lastByte = -1;      ///< Last byte read by peek()
   bool _hasPeeked = false; ///< Indicates if we have a peeked byte waiting
+  uint16_t _available = 0; ///< Unread device bytes from the latest count query.
 
  public:
   // Constructor & destructor
   Adafruit_UBloxDDC(uint8_t address = 0x42, TwoWire* wire = &Wire);
   ~Adafruit_UBloxDDC();
+  /// @brief Copies cannot share ownership of the I2C device.
+  /// @param other Device that cannot be copied.
+  Adafruit_UBloxDDC(const Adafruit_UBloxDDC& other) = delete;
+  /// @brief Assignment is disabled to prevent a double delete.
+  /// @param other Device that cannot be assigned.
+  /// @return No value; this operation is deleted.
+  Adafruit_UBloxDDC& operator=(const Adafruit_UBloxDDC& other) = delete;
 
   // Basic methods
   bool begin();
@@ -59,6 +67,7 @@ class Adafruit_UBloxDDC : public Stream {
   virtual int available() override;
   virtual int read() override;
   virtual int peek() override;
+  virtual void flush() override;
   // Stream interface implementation
   virtual size_t write(uint8_t) override;
   virtual size_t write(const uint8_t* buffer, size_t size) override;

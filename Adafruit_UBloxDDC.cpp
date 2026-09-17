@@ -24,6 +24,8 @@
 
 #include "Adafruit_UBloxDDC.h"
 
+#include <limits.h>
+
 /*!
  *  @brief  Constructor
  *  @param  address
@@ -49,12 +51,22 @@ Adafruit_UBloxDDC::~Adafruit_UBloxDDC() {
  *  @return True if GPS module responds, false on any failure
  */
 bool Adafruit_UBloxDDC::begin() {
+  _hasPeeked = false;
+  _available = 0;
   return _i2cDevice->begin();
 }
 
+/*! @brief Complete pending writes (no-op: DDC writes are synchronous).
+ * Does
+ * not discard receiver data or a cached peeked byte.
+ */
+void Adafruit_UBloxDDC::flush() {}
+
 /*!
  *  @brief  Gets the number of bytes available for reading
- *  @return Number of bytes available, or 0 if no data or error
+ *  @return Count including a peeked byte, saturated at INT_MAX. A failed bus
+ *
+ * read still reports a cached byte; otherwise no data/error returns zero.
  */
 int Adafruit_UBloxDDC::available() {
   uint8_t buffer[2];
@@ -64,13 +76,15 @@ int Adafruit_UBloxDDC::available() {
       Adafruit_BusIO_Register(_i2cDevice, REG_BYTES_AVAILABLE_MSB, 2);
 
   if (!bytesAvailableReg.read(buffer, 2)) {
-    return 0;
+    _available = 0;
+    return _hasPeeked ? 1 : 0;
   }
 
-  uint16_t bytesAvailable = (uint16_t)buffer[0] << 8;
-  bytesAvailable |= buffer[1];
-
-  return bytesAvailable;
+  _available = (uint16_t)buffer[0] * 256 + buffer[1];
+  uint32_t count = (uint32_t)_available + (_hasPeeked ? 1 : 0);
+  if (count > INT_MAX)
+    return INT_MAX;
+  return (int)count;
 }
 
 /*!
@@ -84,6 +98,11 @@ int Adafruit_UBloxDDC::read() {
     return _lastByte;
   }
 
+  // Query first so an empty DDC stream's 0xFF idle byte is never peek-cached.
+  // A 0xFF byte inside an available UBX payload is still ordinary data.
+  if (!_available && !available())
+    return -1;
+
   uint8_t value;
 
   // Create a register for the data stream
@@ -91,9 +110,10 @@ int Adafruit_UBloxDDC::read() {
       Adafruit_BusIO_Register(_i2cDevice, REG_DATA_STREAM, 1);
 
   if (!dataStreamReg.read(&value, 1)) {
+    _available = 0;
     return -1;
   }
-
+  --_available;
   return value;
 }
 
@@ -122,6 +142,7 @@ int Adafruit_UBloxDDC::peek() {
  *  @return Always returns 0 as single-byte writes aren't supported on I2C
  */
 size_t Adafruit_UBloxDDC::write(uint8_t val) {
+  (void)val;
   // Single-byte writes aren't suitable for I2C/DDC
   // This shouldn't be called if properly using the multi-byte version
   return 0;
@@ -135,16 +156,25 @@ size_t Adafruit_UBloxDDC::write(uint8_t val) {
  */
 size_t Adafruit_UBloxDDC::write(const uint8_t* buffer, size_t size) {
   // For I2C/DDC, we need at least 2 bytes for a write
-  if (size < 2) {
+  if (!buffer || size < 2 || _i2cDevice->maxBufferSize() < 2) {
     // Single-byte writes aren't supported
     return 0;
   }
 
-  // Use Adafruit_BusIO to handle the I2C transaction
-  if (_i2cDevice->write(buffer, size)) {
-    return size;
+  // DDC writes need at least two bytes (M8 protocol section 11.5.2). Split
+  // at the actual Wire capacity without leaving a one-byte final transaction.
+  size_t written = 0;
+  while (written < size) {
+    size_t count = size - written;
+    if (count > _i2cDevice->maxBufferSize())
+      count = _i2cDevice->maxBufferSize();
+    if (size - written - count == 1)
+      --count;
+    if (count < 2 || !_i2cDevice->write(buffer + written, count))
+      break;
+    written += count;
   }
-  return 0;
+  return written;
 }
 
 /*!
@@ -181,23 +211,27 @@ uint16_t Adafruit_UBloxDDC::readBytes(uint8_t* buffer, uint16_t length) {
 
   while (bytesRead < length) {
     // Calculate chunk size (I2C has a limit on bytes per transfer)
-    uint16_t chunkSize = min((uint16_t)(length - bytesRead), (uint16_t)32);
+    uint16_t chunkSize = min((uint16_t)(length - bytesRead),
+                             (uint16_t)_i2cDevice->maxBufferSize());
 
     if (!dataStreamReg.read(&buffer[bytesRead], chunkSize)) {
+      _available = 0;
       break;
     }
 
     bytesRead += chunkSize;
+    _available -= chunkSize;
   }
 
   return bytesRead;
 }
 
 /*!
- *  @brief  Read a complete message from the device
- *  @param  buffer     Pointer to buffer to store message data
+ *  @brief  Read currently available stream bytes; not protocol framing
+ *
+ * @param  buffer     Pointer to buffer to store message data
  *  @param  maxLength  Maximum length of buffer
- *  @return Number of bytes read into the buffer
+ *  @return Number of bytes read; may contain partial or multiple messages.
  */
 uint16_t Adafruit_UBloxDDC::readMessage(uint8_t* buffer, uint16_t maxLength) {
   uint16_t bytesAvailable = available();
@@ -212,11 +246,17 @@ uint16_t Adafruit_UBloxDDC::readMessage(uint8_t* buffer, uint16_t maxLength) {
 }
 
 /*!
- *  @brief  Read a message into the internal buffer and return a pointer to it
- *  @param  messageLength  Pointer to variable to store message length
- *  @return Pointer to internal buffer containing the message
+ *  @brief  Read available stream bytes into the internal buffer
+ *  @param
+ * messageLength  Pointer to variable to store message length
+ *  @return Borrowed buffer of up to 128 bytes, or NULL for a NULL length
+ * pointer.
+ *  This does not find UBX/NMEA boundaries; use Adafruit_UBX for
+ * framed messages.
  */
 uint8_t* Adafruit_UBloxDDC::readMessage(uint16_t* messageLength) {
+  if (!messageLength)
+    return NULL;
   *messageLength = readMessage(_buffer, MAX_BUFFER_SIZE);
   return _buffer;
 }
