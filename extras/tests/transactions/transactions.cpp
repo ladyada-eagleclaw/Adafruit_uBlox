@@ -1,4 +1,4 @@
-#include "TestHarness.h"
+#include "UBloxTestHelpers.h"
 static int callbacks;
 static int nmeaCallbacks;
 static Adafruit_UBX* receiver;
@@ -110,7 +110,10 @@ int main() {
   port.shortWrite = 1;
   Bytes payload(100);
   assert(!ubx.sendMessage(6, 8, payload.data(), payload.size()));
-  assert(port.output.size() == 32);
+  // The failed write still transmits its accepted prefix.
+  assert(port.output.size() == 63);
+  auto complete = packet(6, 8, payload);
+  assert(port.output == Bytes(complete.begin(), complete.begin() + 63));
   port.shortWrite = -1;
 
   // Port configuration preserves the live baud rate, mode, address and flags.

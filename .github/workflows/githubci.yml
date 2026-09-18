@@ -13,8 +13,13 @@ jobs:
         repository: adafruit/Adafruit_GPS
         ref: 1.9.0
         path: gps-dependency
+    - uses: actions/checkout@v4
+      with:
+        repository: adafruit/Adafruit_TestHarness
+        ref: 0e17f1071a69fe043606b3c2e0d0748affbeb989
+        path: test-harness
     - name: Run all tests with sanitizers
-      run: python3 extras/tests/run_tests.py --gps-dir gps-dependency
+      run: python3 extras/tests/run_tests.py --gps-dir gps-dependency --harness-dir test-harness
 
   build:
     runs-on: ubuntu-latest

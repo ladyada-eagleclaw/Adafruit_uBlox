@@ -1,6 +1,6 @@
 #include <type_traits>
 
-#include "TestHarness.h"
+#include "UBloxTestHelpers.h"
 int main() {
   static_assert(!std::is_copy_constructible<Adafruit_UBloxDDC>::value,
                 "Owned device");
