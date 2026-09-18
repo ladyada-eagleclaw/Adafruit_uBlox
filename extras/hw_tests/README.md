@@ -75,11 +75,33 @@ ACK handling, the 92-byte NAV-PVT response, and shared NMEA parsing passed.
 The DDC capture reached 144 valid NMEA lines with zero invalid frames. UART
 reception reached 160 valid lines and 60 decoded position sentences with zero
 invalid frames. No satellite fix was available during the DDC run; position
-accuracy is untested. The PPS input-only run did not observe stable 1 Hz pulses
-and reported NOT VERIFIED; receiver timepulse configuration, satellite visibility
-and the physical PPS path have not been isolated as the cause.
+accuracy is untested. The initial indoor PPS run did not observe stable 1 Hz
+pulses and reported NOT VERIFIED.
 
 The port-configuration test also passed: UBX-only operation suppressed NMEA,
 UBX replies remained available, all other DDC port settings matched their
 original values, and restoration resumed NMEA output. No settings were saved
 to nonvolatile memory.
+
+After moving the fixture outdoors, the receiver acquired a valid 2D fix. All
+four hardware sketches were compiled again for the Nano and passed live:
+
+- DDC decoded 39 position fixes, received the complete NAV-PVT reply, and
+  reached 162 valid NMEA lines with zero invalid frames.
+- UART received 179 valid NMEA lines and decoded 60 position sentences with
+  zero invalid frames and no SoftwareSerial overflow.
+- PPS passed the standard 1 Hz test. A separate input-only diagnostic counted
+  16 rising edges in 15 seconds, with intervals of 997-999 ms on the Nano's
+  clock. This verifies the signal path, not absolute timing accuracy.
+- The protocol-switching test passed again and restored the original DDC
+  settings, with NMEA output resuming. No settings were saved to NVM.
+
+Read-only UBX polls also returned the 32-byte CFG-TP5 configuration and a
+92-byte NAV-PVT reporting a valid 2D fix using three satellites. CFG-TP5 had
+timepulse enabled, a one-second period, and a 100 ms pulse when time-locked.
+The brief initial outdoor PPS failure cleared without changing these settings.
+In the final 20-second UART capture, eight GPS satellites were reported in view,
+but no valid fix was available: reception remains intermittent. Sustained 3D
+positioning, position accuracy and the final PCB revision remain untested.
+The Nano was left running a receive-only UART monitor through its own USB
+connection.
