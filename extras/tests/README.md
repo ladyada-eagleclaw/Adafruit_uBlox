@@ -14,7 +14,8 @@ Coverage includes zero-length/92-byte/oversized UBX packets, checksum and gap
 recovery, overlapping sync bytes, NMEA/UBX/RTCM isolation, exact coordinates,
 ACK/NAK ordering, queued and partial stale replies, clock rollover, reentrant callbacks,
 bounded continuous input, constant-memory transmit boundaries, port-setting
-preservation, DDC peek/read semantics, and Wire-sized writes.
+preservation, ACK/port replies behind queued navigation without per-byte sleeps,
+DDC peek/read semantics, count-query reuse/error recovery, and Wire-sized writes.
 
 RTCM3 input is skipped by its length; no RTCM CRC validation or forwarding is
 claimed. UBX ACKs have no transaction sequence number: an identical delayed

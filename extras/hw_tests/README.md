@@ -88,6 +88,11 @@ COM11. Re-enumerate ports before use; port numbers are not permanent.
   that navigation configuration back to battery-backed RAM. Requires the
   manual procedure below. No flash or EEPROM writes; this deliberately saves
   the current navigation profile to BBR, replacing any older stored profile.
+- `08_rate`: verifies actual GGA timestamps at 1 Hz, 2 Hz, then 1 Hz over DDC,
+  with fifteen seconds at each rate. Requires GGA output with valid UTC time;
+  rejects skipped/duplicate epochs and malformed frames, then restores and
+  reads back all six original CFG-RATE bytes. No BBR or flash save. Run outside
+  a leap second. This checks navigation cadence, not absolute clock accuracy.
 
 ### Battery retention procedure
 
@@ -197,3 +202,43 @@ Pin voltage limits and battery behavior follow the
 [SAM-M8Q datasheet](https://content.u-blox.com/sites/default/files/documents/SAM-M8Q_DataSheet_UBX-16012619.pdf).
 The command layouts follow sections 32.10.3, 32.10.27 and 32.18.3 of the
 [u-blox 8/M8 protocol manual](https://content.u-blox.com/sites/default/files/products/documents/u-blox8-M8_ReceiverDescrProtSpec_UBX-13003221.pdf).
+
+### Navigation-rate follow-up, 2026-09-18
+
+The first `08_rate` regression run **failed** at 2 Hz on the Nano/DDC
+fixture. Its first 1 Hz stage received 15 GGA epochs with 14 correct intervals;
+the 2 Hz stage received only 20 epochs in fifteen seconds, with 19 correct
+500 ms intervals and no malformed NMEA. Correct timestamp spacing alone does
+not prove the host is keeping up with the receiver.
+
+The test also reported restoration failure after its ACK timeout. A separate
+DDC recovery/readback found the original configuration already active and
+verified it again: 1000 ms, one navigation cycle, GPS time reference. No NVM
+save occurred. These results prompted the receive-throughput and command-wait
+fix below; the original compiled sketch was not a passing hardware result.
+
+PPS passed again after recovery. A fresh 25-second UART sample before the
+rate test contained 253 valid NMEA frames, zero invalid frames and 23 GGA fix
+reports, with a 3D fix using six satellites and HDOP 2.28 at the end.
+The following three-minute DDC run reached 1925 valid NMEA messages with zero
+invalid frames and passed CFG-RATE polling/ACK and the full NAV-PVT response.
+The Nano was returned to the receive-only UART monitor after this run.
+
+After reusing DDC's known unread-byte count and removing per-byte command-wait
+sleeps while input is available, `08_rate` **passes** on the same Nano fixture.
+Its three fifteen-second stages received 15, 30, and 15 GGA epochs at 1, 2,
+and 1 Hz respectively. All intervals matched, with no malformed NMEA; all
+three stages reported a fix. Command ACKs passed and the complete original
+CFG-RATE was restored and read back without saving to NVM. The receive-only
+UART monitor was restored. This verifies 2 Hz on this fixture and output
+configuration, not every baud rate, enabled message set, or navigation rate.
+The port test also passed again: UBX-only output suppressed NMEA, UBX replies
+continued, unrelated port settings were preserved, and restoring the original
+configuration resumed NMEA. No NVM writes were made.
+
+Battery-voltage measurement was deferred. Rev A's schematic connects B1
+positive directly to GPS1 VBACKUP, and B1 negative to ground. The next check is
+the installed cell/holder voltage relative to module ground, then the same
+voltage at the receiver's V_BCKP connection. SAM-M8Q specifies 1.4-3.6 V on
+V_BCKP; the existing main-rail ADC contacts do not measure this net. No further
+power interruption or battery-retention pass is claimed.

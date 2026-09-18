@@ -36,6 +36,15 @@ int main() {
   }
   assert(callbacks == 8);
   assert(nmeaCallbacks == 2);
+  // Navigation traffic ahead of an ACK must fit within the deadline without
+  // adding a millisecond of idle sleep to every already-available byte.
+  port.reply = [&]() {
+    port.push(Bytes(400, 0));
+    port.push(sentence("GNGLL,,,,,123456,V,N"));
+    port.push(ack);
+  };
+  assert(ubx.sendMessageWithAck(6, 8, NULL, 0, 1000) == UBX_SEND_SUCCESS);
+  assert(nmeaCallbacks == 3);
   port.push(ack); // Stale queued ACK is dispatched before arming the new wait.
   port.reply = [&]() {
     port.push(nak);
@@ -58,7 +67,7 @@ int main() {
     port.push(ack);
   };
   assert(ubx.sendMessageWithAck(6, 8, NULL, 0) == UBX_SEND_SUCCESS);
-  assert(nmeaCallbacks == 3);
+  assert(nmeaCallbacks == 4);
   // Nor may a partial RTCM frame expose its embedded ACK after arming.
   port.push({0xD3, 0, (uint8_t)ack.size()});
   port.reply = [&]() {
@@ -115,12 +124,13 @@ int main() {
   config.fields.outProtoMask = 3;
   config.fields.flags = 2;
   port.reply = [&]() {
-    if (port.output.size() == 9)
+    if (port.output.size() == 9) {
+      port.push(Bytes(400, 0));
       port.push(packet(6, 0, Bytes(config.raw, config.raw + 20)));
-    else
+    } else
       port.push(packet(5, 1, {6, 0}));
   };
-  assert(ubx.setUBXOnly(UBX_PORT_UART1) == UBX_SEND_SUCCESS);
+  assert(ubx.setUBXOnly(UBX_PORT_UART1, true, 1000) == UBX_SEND_SUCCESS);
   config.fields.inProtoMask = 1;
   config.fields.outProtoMask = 1;
   auto expected = packet(6, 0, Bytes(config.raw, config.raw + 20));

@@ -10,6 +10,7 @@ struct TwoWire {
   int failWrite = -1;
   bool failRead = false;
   int reportedCount = -1;
+  size_t countReads = 0;
 };
 extern TwoWire Wire;
 class Adafruit_I2CDevice {
@@ -33,6 +34,7 @@ class Adafruit_I2CDevice {
     if (wire->failRead)
       return false;
     if (address == 0xFD && size == 2) {
+      ++wire->countReads;
       uint16_t count = wire->input.size();
       if (wire->reportedCount >= 0)
         count = wire->reportedCount;

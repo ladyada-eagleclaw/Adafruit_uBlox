@@ -64,11 +64,21 @@ void Adafruit_UBloxDDC::flush() {}
 
 /*!
  *  @brief  Gets the number of bytes available for reading
- *  @return Count including a peeked byte, saturated at INT_MAX. A failed bus
+ *  @return Known unread count including a peeked byte, saturated at INT_MAX.
  *
- * read still reports a cached byte; otherwise no data/error returns zero.
+ * @details Refreshes the receiver count after consuming the previous count.
+ *
+ * On a bus error, reports a cached peeked byte or zero.
  */
 int Adafruit_UBloxDDC::available() {
+  // Only this Stream consumes DDC output. Reuse the unread count instead of
+  // spending an I2C transaction on the count before every single data byte.
+  if (_available) {
+    uint32_t count = (uint32_t)_available + (_hasPeeked ? 1 : 0);
+    if (count > INT_MAX)
+      return INT_MAX;
+    return (int)count;
+  }
   uint8_t buffer[2];
 
   // Create a register for reading bytes available

@@ -344,7 +344,7 @@ UBXSendStatus Adafruit_UBX::sendMessageWithAck(uint8_t msgClass, uint8_t msgId,
   while (_ackStatus == UBX_SEND_TIMEOUT &&
          (uint32_t)(millis() - start) < timeout_ms) {
     checkMessages(1);
-    if (_ackStatus == UBX_SEND_TIMEOUT)
+    if (_ackStatus == UBX_SEND_TIMEOUT && _stream->available() <= 0)
       delay(1);
   }
   _waitingAck = false;
@@ -382,7 +382,7 @@ UBXSendStatus Adafruit_UBX::setUBXOnly(UBXPortId portID, bool checkAck,
   }
   while (!_portReceived && (uint32_t)(millis() - start) < timeout_ms) {
     checkMessages(1);
-    if (!_portReceived)
+    if (!_portReceived && _stream->available() <= 0)
       delay(1);
   }
   _portReply = NULL;

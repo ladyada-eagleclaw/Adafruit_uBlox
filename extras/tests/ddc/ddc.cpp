@@ -34,6 +34,30 @@ int main() {
   wire.reportedCount = 65535;
   assert(ddc.available() > 0);
   wire.reportedCount = -1;
+  assert(ddc.begin()); // Reset the synthetic unread count.
+
+  // A byte-at-a-time parser must not query the count for every byte. Data
+  // arriving after the snapshot remains queued and is found when it runs out.
+  wire.input = {1, 2, 3};
+  size_t countReads = wire.countReads;
+  assert(ddc.available() == 3);
+  wire.input.push_back(4);
+  for (int value = 1; value <= 3; ++value) {
+    assert(ddc.available() == 4 - value);
+    assert(ddc.read() == value);
+  }
+  assert(wire.countReads == countReads + 1);
+  assert(ddc.available() == 1 && ddc.read() == 4);
+  assert(ddc.available() == 0);
+
+  // A failed data read invalidates the cached count before the next query.
+  wire.input = {5, 6};
+  assert(ddc.available() == 2);
+  wire.failRead = true;
+  assert(ddc.read() == -1);
+  wire.failRead = false;
+  wire.input.clear();
+  assert(ddc.available() == 0);
   for (size_t limit : {size_t(16), size_t(32), size_t(64)}) {
     wire.capacity = limit;
     for (size_t count :
