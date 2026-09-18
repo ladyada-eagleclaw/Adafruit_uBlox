@@ -9,10 +9,11 @@ python3 extras/tests/run_tests.py --gps-dir ../Adafruit_GPS \
 ```
 
 CI discovers every `extras/tests/*/*.cpp` and runs it with AddressSanitizer,
-UndefinedBehaviorSanitizer, and compiler warnings as errors. Arduino compatibility,
-the fake clock, fake serial streams, and the runner come from TestHarness. The
-local support files contain only u-blox packet helpers and DDC-specific I2C/BusIO
-fakes. These are deterministic transport fakes, not receiver hardware emulation.
+UndefinedBehaviorSanitizer, and compiler warnings as errors. All support headers
+come from TestHarness: Arduino compatibility, clock, streams, I2C/BusIO fakes,
+and its optional `fixtures/ublox` packet/DDC helpers. This repository retains
+the regression cases and a small runner selecting the sources and fixture.
+These are deterministic transport fakes, not receiver hardware emulation.
 TestHarness is a development dependency, not an Arduino sketch dependency.
 
 Coverage includes zero-length/92-byte/oversized UBX packets, checksum and gap

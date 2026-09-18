@@ -20,7 +20,8 @@ def main():
     spec = importlib.util.spec_from_file_location("adafruit_test_harness", runner)
     harness = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(harness)
-    harness.run_tests(tests, sources, [root / "extras/tests/support", root, gps])
+    fixtures = args.harness_dir.resolve() / "fixtures/ublox"
+    harness.run_tests(tests, sources, [fixtures, root, gps])
 
 
 if __name__ == "__main__":

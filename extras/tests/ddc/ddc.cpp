@@ -6,7 +6,7 @@ int main() {
                 "Owned device");
   static_assert(!std::is_copy_constructible<Adafruit_UBX>::value,
                 "Owned buffers");
-  TwoWire wire;
+  UBloxDDCFixture wire;
   Adafruit_UBloxDDC ddc(0x42, &wire);
   assert(ddc.begin());
   assert(ddc.read() == -1 && ddc.peek() == -1 && ddc.available() == 0);
